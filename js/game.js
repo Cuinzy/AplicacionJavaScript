@@ -16,9 +16,13 @@ const state = {
   editorContents: { js: '', html: '', css: '' },
 };
 
-// ---------- SAVE / LOAD ----------
+// ---------- SAVE / LOAD (por nombre de jugador) ----------
+function saveKey() {
+  return 'webcraft_' + (state.playerName || 'guest').toLowerCase().replace(/\s+/g, '_');
+}
+
 function saveProgress() {
-  localStorage.setItem('webcraft_save', JSON.stringify({
+  localStorage.setItem(saveKey(), JSON.stringify({
     playerName: state.playerName,
     points: state.points,
     completedChallenges: state.completedChallenges,
@@ -27,14 +31,26 @@ function saveProgress() {
   }));
 }
 
-function loadProgress() {
+function loadProgress(name) {
   try {
-    const raw = localStorage.getItem('webcraft_save');
-    if (!raw) return;
+    const key = name
+      ? 'webcraft_' + name.toLowerCase().replace(/\s+/g, '_')
+      : saveKey();
+    const raw = localStorage.getItem(key);
+    if (!raw) return false;
     const saved = JSON.parse(raw);
+    // Resetea el estado antes de cargar para no mezclar datos de otro jugador
+    state.points = 0;
+    state.completedChallenges = [];
+    state.usedHints = {};
+    state.unlockedAchievements = [];
     Object.assign(state, saved);
-  } catch(e) { /* ignore corrupt save */ }
+    return true;
+  } catch(e) { return false; }
 }
+
+// ---------- NIVELES ACTIVOS (selección aleatoria por jugador) ----------
+let ACTIVE_LEVELS = LEVELS; // se reemplaza al iniciar partida
 
 // ---------- SCREEN NAVIGATION ----------
 function showScreen(id) {
@@ -44,7 +60,11 @@ function showScreen(id) {
 
 // ---------- WELCOME SCREEN ----------
 function initWelcome() {
-  loadProgress();
+  // Carga el último jugador si existe (solo para pre-rellenar el input)
+  try {
+    const lastPlayer = localStorage.getItem('webcraft_last_player');
+    if (lastPlayer) state.playerName = lastPlayer;
+  } catch(e) {}
 
   const btn   = document.getElementById('btn-start');
   const input = document.getElementById('player-name-input');
@@ -57,6 +77,12 @@ function initWelcome() {
     const name = input.value.trim();
     if (!name) { input.style.borderColor = '#e74c3c'; input.focus(); return; }
     state.playerName = name;
+    // Carga el progreso específico de este jugador
+    loadProgress(name);
+    state.playerName = name; // loadProgress puede sobreescribirlo con el guardado
+    // Genera 5 retos por nivel de un pool de 10, determinista por nombre
+    ACTIVE_LEVELS = buildActiveLevels(name, 5);
+    localStorage.setItem('webcraft_last_player', name);
     saveProgress();
     initMap();
     showScreen('screen-map');
@@ -82,9 +108,10 @@ function initMap() {
 
   let prevLevelDone = true;
 
-  LEVELS.forEach((level, li) => {
+  ACTIVE_LEVELS.forEach((level, li) => {
     const levelDone = level.challenges.every(c => state.completedChallenges.includes(c.id));
-    const levelUnlocked = prevLevelDone || li === 0;
+    // Niveles 1, 2 y 3 siempre desbloqueados; el resto requiere completar el anterior
+    const levelUnlocked = level.id <= 3 || prevLevelDone || li === 0;
 
     const row = document.createElement('div');
     row.className = 'level-row';
@@ -715,16 +742,16 @@ function goNext() {
 }
 
 function showLevelDoneModal(level) {
-  const li = LEVELS.indexOf(level);
+  const li = ACTIVE_LEVELS.indexOf(level);
   document.getElementById('level-done-title').textContent = `¡Nivel ${level.id} Completado!`;
   document.getElementById('level-done-msg').textContent   = `Has dominado "${level.name}". ¡Excelente trabajo, ${state.playerName}!`;
 
   const nextBtn = document.getElementById('btn-next-level');
-  if (li + 1 < LEVELS.length) {
+  if (li + 1 < ACTIVE_LEVELS.length) {
     nextBtn.style.display = '';
     nextBtn.onclick = () => {
       document.getElementById('modal-level-done').classList.add('hidden');
-      const nextLevel = LEVELS[li + 1];
+      const nextLevel = ACTIVE_LEVELS[li + 1];
       startChallenge(nextLevel, nextLevel.challenges[0]);
     };
   } else {
@@ -737,7 +764,7 @@ function showLevelDoneModal(level) {
 // ---------- ACHIEVEMENTS ----------
 function checkAchievements() {
   ACHIEVEMENTS.forEach(ach => {
-    if (!state.unlockedAchievements.includes(ach.id) && ach.condition(state)) {
+    if (!state.unlockedAchievements.includes(ach.id) && ach.condition(state, ACTIVE_LEVELS)) {
       state.unlockedAchievements.push(ach.id);
       saveProgress();
       showAchievementToast(ach);
