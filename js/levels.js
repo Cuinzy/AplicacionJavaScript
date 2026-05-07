@@ -2578,7 +2578,7 @@ input[type="range"] {
             if (!cartas.length) return { pass: false, msg: 'No encontré elementos con clase "carta".' };
             btn.click();
             // Wait a brief moment for the first setTimeout(fn, 0) to fire
-            const primeraVisible = cartas[0].classList.contains('visible');
+            const primeraVisible = cartas[1].classList.contains('visible');
             if (!primeraVisible) return { pass: false, msg: 'Después del clic, la primera .carta no tiene la clase "visible". ¿Usaste setTimeout con i * 150?' };
             return { pass: true, msg: '¡Animación de entrada escalonada funcionando! setTimeout con retraso acumulado dominado.' };
           } catch(e) { return { pass: false, msg: 'Error: ' + e.message }; }
