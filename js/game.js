@@ -941,8 +941,330 @@ function init() {
 
   // Editor setup
   setupEditor();
+
+  // Admin panel
+  initAdmin();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   try { init(); } catch(e) { console.error('WebCraft init error:', e); }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+//  MÓDULO DE ADMINISTRACIÓN
+//  - API de consola: WebCraftAdmin.desbloquear('Juan', 4)
+//  - Panel visual: botón 🔐 en la pantalla de bienvenida
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Clave de acceso (cámbiala aquí antes de publicar) ──
+const ADMIN_PASSWORD = 'docente2024';
+
+// ── Helpers de datos ──────────────────────────────────
+function adminKey(nombre) {
+  return 'webcraft_' + nombre.toLowerCase().replace(/\s+/g, '_');
+}
+
+function adminGetData(nombre) {
+  try {
+    const raw = localStorage.getItem(adminKey(nombre));
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
+}
+
+function adminSaveData(nombre, data) {
+  localStorage.setItem(adminKey(nombre), JSON.stringify(data));
+}
+
+function adminListPlayers() {
+  const jugadores = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('webcraft_') && k !== 'webcraft_last_player') {
+      try {
+        const d = JSON.parse(localStorage.getItem(k));
+        if (d && d.playerName) jugadores.push(d);
+      } catch(e) {}
+    }
+  }
+  return jugadores;
+}
+
+// ── Lógica de desbloqueo ──────────────────────────────
+function adminUnlockUpTo(nombre, nivelObjetivo) {
+  const data = adminGetData(nombre) || {
+    playerName: nombre, points: 0,
+    completedChallenges: [], usedHints: {}, unlockedAchievements: []
+  };
+  const activeLevels = buildActiveLevels(nombre, 5);
+  const nuevosIds = [];
+  for (let i = 0; i < nivelObjetivo - 1; i++) {
+    if (activeLevels[i]) activeLevels[i].challenges.forEach(c => nuevosIds.push(c.id));
+  }
+  const completados = new Set(data.completedChallenges || []);
+  nuevosIds.forEach(id => completados.add(id));
+  data.completedChallenges = [...completados];
+  data.playerName = nombre;
+  adminSaveData(nombre, data);
+  return { data, nuevosIds };
+}
+
+function adminSetPoints(nombre, puntos) {
+  const data = adminGetData(nombre);
+  if (!data) return false;
+  data.points = puntos;
+  adminSaveData(nombre, data);
+  return true;
+}
+
+function adminReset(nombre) {
+  localStorage.removeItem(adminKey(nombre));
+}
+
+// ── Panel visual ──────────────────────────────────────
+let adminSelectedPlayer = null;
+
+function initAdmin() {
+  // Botón de entrada en bienvenida
+  const btnEntry = document.getElementById('btn-admin-entry');
+  const modal    = document.getElementById('modal-admin-pass');
+  const passInput = document.getElementById('admin-pass-input');
+  const passError = document.getElementById('admin-pass-error');
+  const btnOk    = document.getElementById('btn-admin-pass-ok');
+  const btnCancel = document.getElementById('btn-admin-pass-cancel');
+
+  if (btnEntry) {
+    btnEntry.addEventListener('click', () => {
+      passInput.value = '';
+      passError.classList.add('hidden');
+      modal.classList.remove('hidden');
+      setTimeout(() => passInput.focus(), 80);
+    });
+  }
+
+  if (btnCancel) btnCancel.addEventListener('click', () => modal.classList.add('hidden'));
+
+  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+
+  function tryLogin() {
+    if (passInput.value === ADMIN_PASSWORD) {
+      modal.classList.add('hidden');
+      adminSelectedPlayer = null;
+      adminRenderPlayerList();
+      document.getElementById('admin-player-detail').classList.add('hidden');
+      document.getElementById('admin-no-selection').classList.remove('hidden');
+      document.getElementById('admin-feedback').classList.add('hidden');
+      showScreen('screen-admin');
+    } else {
+      passError.classList.remove('hidden');
+      passInput.value = '';
+      passInput.focus();
+      passInput.style.borderColor = 'var(--accent3)';
+      setTimeout(() => { passInput.style.borderColor = ''; }, 1200);
+    }
+  }
+
+  if (btnOk) btnOk.addEventListener('click', tryLogin);
+  if (passInput) passInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryLogin(); });
+
+  // Volver al inicio
+  const btnBack = document.getElementById('btn-admin-back');
+  if (btnBack) btnBack.addEventListener('click', () => showScreen('screen-welcome'));
+
+  // Actualizar lista
+  const btnRefresh = document.getElementById('btn-admin-refresh');
+  if (btnRefresh) btnRefresh.addEventListener('click', () => {
+    adminRenderPlayerList();
+    if (adminSelectedPlayer) adminRenderPlayerDetail(adminSelectedPlayer);
+  });
+
+  // Botón desbloquear nivel
+  const btnUnlock = document.getElementById('btn-admin-unlock');
+  if (btnUnlock) btnUnlock.addEventListener('click', () => {
+    if (!adminSelectedPlayer) return;
+    const nivel = parseInt(document.getElementById('admin-unlock-select').value);
+    try {
+      const { nuevosIds } = adminUnlockUpTo(adminSelectedPlayer, nivel);
+      adminShowFeedback(`✅ Nivel ${nivel} desbloqueado. ${nuevosIds.length} retos marcados completados.`, 'success');
+      adminRenderPlayerDetail(adminSelectedPlayer);
+    } catch(e) {
+      adminShowFeedback('❌ Error: ' + e.message, 'error');
+    }
+  });
+
+  // Botón desbloquear todo
+  const btnUnlockAll = document.getElementById('btn-admin-unlock-all');
+  if (btnUnlockAll) btnUnlockAll.addEventListener('click', () => {
+    if (!adminSelectedPlayer) return;
+    try {
+      adminUnlockUpTo(adminSelectedPlayer, 6);
+      adminShowFeedback('✅ Todos los niveles desbloqueados.', 'success');
+      adminRenderPlayerDetail(adminSelectedPlayer);
+    } catch(e) {
+      adminShowFeedback('❌ Error: ' + e.message, 'error');
+    }
+  });
+
+  // Botón ajustar puntos
+  const btnSetPts = document.getElementById('btn-admin-set-points');
+  if (btnSetPts) btnSetPts.addEventListener('click', () => {
+    if (!adminSelectedPlayer) return;
+    const ptsInput = document.getElementById('admin-points-input');
+    const pts = parseInt(ptsInput.value);
+    if (isNaN(pts) || pts < 0) { adminShowFeedback('❌ Ingresa un número válido de puntos.', 'error'); return; }
+    if (adminSetPoints(adminSelectedPlayer, pts)) {
+      adminShowFeedback(`✅ Puntos actualizados a ${pts}.`, 'success');
+      adminRenderPlayerDetail(adminSelectedPlayer);
+      ptsInput.value = '';
+    }
+  });
+
+  // Botón resetear
+  const btnReset = document.getElementById('btn-admin-reset');
+  if (btnReset) btnReset.addEventListener('click', () => {
+    if (!adminSelectedPlayer) return;
+    const confirmar = confirm(`¿Seguro que quieres resetear todo el progreso de "${adminSelectedPlayer}"?\nEsta acción no se puede deshacer.`);
+    if (!confirmar) return;
+    adminReset(adminSelectedPlayer);
+    adminShowFeedback(`🗑️ Progreso de "${adminSelectedPlayer}" eliminado.`, 'success');
+    adminSelectedPlayer = null;
+    document.getElementById('admin-player-detail').classList.add('hidden');
+    document.getElementById('admin-no-selection').classList.remove('hidden');
+    adminRenderPlayerList();
+  });
+}
+
+function adminRenderPlayerList() {
+  const list = document.getElementById('admin-player-list');
+  if (!list) return;
+  const jugadores = adminListPlayers();
+
+  if (jugadores.length === 0) {
+    list.innerHTML = '<div class="admin-empty">No hay jugadores guardados en este navegador.</div>';
+    return;
+  }
+
+  // Ordenar por nombre
+  jugadores.sort((a, b) => (a.playerName || '').localeCompare(b.playerName || ''));
+
+  list.innerHTML = jugadores.map(d => {
+    const completados = (d.completedChallenges || []).length;
+    const puntos = d.points || 0;
+    const isSelected = adminSelectedPlayer === d.playerName;
+    return `
+      <div class="admin-player-item${isSelected ? ' selected' : ''}" data-name="${escapeHtml(d.playerName)}">
+        <div class="admin-player-avatar-sm">👤</div>
+        <div class="admin-player-info">
+          <div class="admin-player-name">${escapeHtml(d.playerName)}</div>
+          <div class="admin-player-meta">${completados} retos completados</div>
+        </div>
+        <div class="admin-player-pts">⭐ ${puntos}</div>
+      </div>
+    `;
+  }).join('');
+
+  list.querySelectorAll('.admin-player-item').forEach(item => {
+    item.addEventListener('click', () => {
+      adminSelectedPlayer = item.dataset.name;
+      adminRenderPlayerList(); // re-render to update selected
+      adminRenderPlayerDetail(adminSelectedPlayer);
+    });
+  });
+}
+
+function adminRenderPlayerDetail(nombre) {
+  const data = adminGetData(nombre);
+  const noSel = document.getElementById('admin-no-selection');
+  const detail = document.getElementById('admin-player-detail');
+  const feedback = document.getElementById('admin-feedback');
+
+  if (!data) {
+    noSel.classList.remove('hidden');
+    detail.classList.add('hidden');
+    return;
+  }
+
+  noSel.classList.add('hidden');
+  detail.classList.remove('hidden');
+  feedback.classList.add('hidden');
+
+  // Cabecera
+  document.getElementById('admin-detail-name').textContent = data.playerName || nombre;
+  const completados = (data.completedChallenges || []).length;
+  const hints = Object.values(data.usedHints || {}).reduce((a, b) => a + b, 0);
+  document.getElementById('admin-detail-stats').textContent =
+    `⭐ ${data.points || 0} puntos  ·  ✅ ${completados} retos completados  ·  💡 ${hints} pistas usadas`;
+
+  // Barras de progreso por nivel
+  const barsContainer = document.getElementById('admin-level-bars');
+  if (barsContainer && typeof buildActiveLevels === 'function') {
+    try {
+      const activeLevels = buildActiveLevels(nombre, 5);
+      const levelColors = ['#58a6ff','#3fb950','#f78166','#d2a8ff','#e3b341','#79c0ff'];
+      barsContainer.innerHTML = activeLevels.map((lvl, i) => {
+        const total = lvl.challenges.length;
+        const done  = lvl.challenges.filter(c => (data.completedChallenges || []).includes(c.id)).length;
+        const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
+        const color = levelColors[i] || '#58a6ff';
+        const locked = lvl.id > 3 && i > 0 && activeLevels[i-1].challenges.some(c => !(data.completedChallenges || []).includes(c.id));
+        return `
+          <div class="admin-level-bar-row">
+            <div class="admin-level-bar-label">${locked ? '🔒' : lvl.icon} Nv.${lvl.id}</div>
+            <div class="admin-level-bar-track">
+              <div class="admin-level-bar-fill" style="width:${pct}%; background:${color};"></div>
+            </div>
+            <div class="admin-level-bar-pct">${done}/${total}</div>
+          </div>
+        `;
+      }).join('');
+    } catch(e) {
+      barsContainer.innerHTML = '<div class="admin-empty">No se pudo calcular el progreso.</div>';
+    }
+  }
+
+  // Pre-rellenar puntos actuales
+  const ptsInput = document.getElementById('admin-points-input');
+  if (ptsInput) ptsInput.placeholder = `Actual: ${data.points || 0}`;
+}
+
+function adminShowFeedback(msg, tipo) {
+  const el = document.getElementById('admin-feedback');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'admin-feedback ' + tipo;
+  el.classList.remove('hidden');
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── API de consola (WebCraftAdmin) ────────────────────
+window.WebCraftAdmin = {
+  key: adminKey,
+  ver(nombre) {
+    const d = adminGetData(nombre);
+    if (!d) { console.warn(`No hay datos para "${nombre}"`); return null; }
+    console.log(`📊 Progreso de "${nombre}":`, d); return d;
+  },
+  desbloquear(nombre, nivel) {
+    if (nivel < 2 || nivel > 6) { console.error('El nivel debe ser entre 2 y 6.'); return; }
+    const { data, nuevosIds } = adminUnlockUpTo(nombre, nivel);
+    console.log(`✅ Nivel ${nivel} desbloqueado para "${nombre}"`);
+    console.log(`   IDs completados:`, nuevosIds);
+    console.log(`   Total: ${data.completedChallenges.length} desafíos`);
+    return data;
+  },
+  desbloquearTodo(nombre) { return this.desbloquear(nombre, 6); },
+  resetear(nombre) { adminReset(nombre); console.log(`🔄 Progreso de "${nombre}" eliminado.`); },
+  setPuntos(nombre, pts) { adminSetPoints(nombre, pts); console.log(`⭐ Puntos de "${nombre}" = ${pts}`); },
+  listarJugadores() {
+    const lista = adminListPlayers();
+    console.table(lista.map(d => ({
+      nombre: d.playerName, puntos: d.points || 0,
+      completados: (d.completedChallenges || []).length
+    })));
+    return lista;
+  }
+};
