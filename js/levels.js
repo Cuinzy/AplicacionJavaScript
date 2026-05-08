@@ -2402,7 +2402,7 @@ label {
       {
         id: '3-9',
         title: 'Sombra Dinámica',
-        mission: `La propiedad box-shadow en CSS tiene una sintaxis compuesta: "X px Y px blur px color". En JavaScript, construyes este string dinámicamente leyendo los tres sliders y concatenándolos. La estrategia ideal es una función actualizarSombra() que: lee sliderX.value, sliderY.value y sliderBlur.value, construye el string de sombra con esos valores más una unidad px para cada uno, y lo asigna a caja.style.boxShadow. Luego agrega el evento 'input' a los tres sliders llamando a la misma función — puedes usar forEach si los pones en un array. Template literals (backticks con ${}) son muy útiles aquí: `${x}px ${y}px ${blur}px rgba(0,0,0,0.3)`.`,
+        mission: `La propiedad box-shadow en CSS tiene una sintaxis compuesta: "X px Y px blur px color". En JavaScript, construyes este string dinámicamente leyendo los tres sliders y concatenándolos. La estrategia ideal es una función actualizarSombra() que: lee sliderX.value, sliderY.value y sliderBlur.value, construye el string de sombra con esos valores más una unidad px para cada uno, y lo asigna a caja.style.boxShadow. Luego agrega el evento 'input' a los tres sliders llamando a la misma función — puedes usar forEach si los pones en un array. Los template literals son muy útiles aquí: escribes el valor de cada slider con \${sliderX.value}px \${sliderY.value}px \${sliderBlur.value}px rgba(0,0,0,0.3) usando backticks.`,
         objective: `Al mover cualquiera de los tres sliders (#sliderX, #sliderY, #sliderBlur), actualiza el box-shadow de #caja con los valores actuales de los tres.`,
         initialHTML: `<div class="contenedor">
   <div id="caja" class="caja">Caja con sombra</div>

@@ -22,13 +22,15 @@ function saveKey() {
 }
 
 function saveProgress() {
-  localStorage.setItem(saveKey(), JSON.stringify({
-    playerName: state.playerName,
-    points: state.points,
-    completedChallenges: state.completedChallenges,
-    usedHints: state.usedHints,
-    unlockedAchievements: state.unlockedAchievements,
-  }));
+  try {
+    localStorage.setItem(saveKey(), JSON.stringify({
+      playerName: state.playerName,
+      points: state.points,
+      completedChallenges: state.completedChallenges,
+      usedHints: state.usedHints,
+      unlockedAchievements: state.unlockedAchievements,
+    }));
+  } catch(e) { console.warn('WebCraft: no se pudo guardar el progreso:', e); }
 }
 
 function loadProgress(name) {
@@ -50,7 +52,8 @@ function loadProgress(name) {
 }
 
 // ---------- NIVELES ACTIVOS (selección aleatoria por jugador) ----------
-let ACTIVE_LEVELS = LEVELS; // se reemplaza al iniciar partida
+// Usa LEVELS si está disponible; si levels.js no cargó bien, empieza vacío
+let ACTIVE_LEVELS = (typeof LEVELS !== 'undefined') ? LEVELS : [];
 
 // ---------- SCREEN NAVIGATION ----------
 function showScreen(id) {
@@ -68,24 +71,37 @@ function initWelcome() {
 
   const btn   = document.getElementById('btn-start');
   const input = document.getElementById('player-name-input');
+  if (!btn || !input) { console.error('WebCraft: no se encontró #btn-start o #player-name-input'); return; }
 
-  if (state.playerName) input.value = state.playerName;
+  try { if (state.playerName) input.value = state.playerName; } catch(e) {}
 
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') btn.click(); });
 
   btn.addEventListener('click', () => {
     const name = input.value.trim();
     if (!name) { input.style.borderColor = '#e74c3c'; input.focus(); return; }
-    state.playerName = name;
-    // Carga el progreso específico de este jugador
-    loadProgress(name);
-    state.playerName = name; // loadProgress puede sobreescribirlo con el guardado
-    // Genera 5 retos por nivel de un pool de 10, determinista por nombre
-    ACTIVE_LEVELS = buildActiveLevels(name, 5);
-    localStorage.setItem('webcraft_last_player', name);
-    saveProgress();
-    initMap();
-    showScreen('screen-map');
+    input.style.borderColor = '';
+    try {
+      state.playerName = name;
+      // Carga el progreso específico de este jugador
+      loadProgress(name);
+      state.playerName = name; // loadProgress puede sobreescribirlo con el guardado
+      // Genera 5 retos por nivel de un pool de 10, determinista por nombre
+      try {
+        ACTIVE_LEVELS = buildActiveLevels(name, 5);
+      } catch(e) {
+        console.warn('buildActiveLevels falló, usando niveles completos:', e);
+        ACTIVE_LEVELS = (typeof LEVELS !== 'undefined') ? LEVELS : [];
+      }
+      try { localStorage.setItem('webcraft_last_player', name); } catch(e) {}
+      saveProgress();
+      initMap();
+      showScreen('screen-map');
+    } catch(e) {
+      console.error('WebCraft error al iniciar:', e);
+      input.style.borderColor = '#e74c3c';
+      alert('Error al iniciar el juego: ' + e.message + '\n\nRevisa la consola (F12) para más detalles.');
+    }
   });
 }
 
@@ -927,4 +943,6 @@ function init() {
   setupEditor();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  try { init(); } catch(e) { console.error('WebCraft init error:', e); }
+});
