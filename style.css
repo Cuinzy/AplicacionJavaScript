@@ -1347,6 +1347,46 @@ html, body {
   margin-top: 10px;
 }
 
+/* Tarjeta que ocupa ambas columnas */
+.admin-action-card-wide {
+  grid-column: 1 / -1;
+}
+
+/* Fila de selectores del reto específico */
+.admin-stage-row {
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-top: 12px;
+}
+.admin-stage-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 110px;
+}
+.admin-stage-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.admin-stage-arrow {
+  font-size: 1.2rem;
+  color: var(--text-dim);
+  padding-bottom: 4px;
+  flex-shrink: 0;
+}
+.admin-stage-preview {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  min-height: 18px;
+  font-style: italic;
+}
+
 .admin-action-card {
   display: flex;
   flex-direction: column;
