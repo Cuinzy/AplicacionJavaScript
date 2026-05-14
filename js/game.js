@@ -1008,6 +1008,43 @@ function adminUnlockUpTo(nombre, nivelObjetivo) {
   return { data, nuevosIds };
 }
 
+/**
+ * Desbloquea un reto específico dentro de un nivel.
+ * levelIdx: índice 0-based en activeLevels (0 = nivel 1)
+ * challengeIdx: índice 0-based del reto a desbloquear (0 = reto 1)
+ *   → marca como completados los retos 0..challengeIdx-1 de ese nivel
+ *   → si el nivel necesita desbloqueo (id > 3), también completa el nivel anterior
+ */
+function adminUnlockUpToChallenge(nombre, levelIdx, challengeIdx) {
+  const data = adminGetData(nombre) || {
+    playerName: nombre, points: 0,
+    completedChallenges: [], usedHints: {}, unlockedAchievements: []
+  };
+  const activeLevels = buildActiveLevels(nombre, 5);
+  const level = activeLevels[levelIdx];
+  if (!level) throw new Error('Nivel no encontrado');
+
+  const nuevosIds = [];
+
+  // Si el nivel requiere desbloqueo (id > 3), completar el nivel anterior entero
+  if (level.id > 3 && levelIdx > 0) {
+    const prevLevel = activeLevels[levelIdx - 1];
+    if (prevLevel) prevLevel.challenges.forEach(c => nuevosIds.push(c.id));
+  }
+
+  // Marcar los retos anteriores al objetivo dentro de este nivel
+  for (let i = 0; i < challengeIdx; i++) {
+    if (level.challenges[i]) nuevosIds.push(level.challenges[i].id);
+  }
+
+  const completados = new Set(data.completedChallenges || []);
+  nuevosIds.forEach(id => completados.add(id));
+  data.completedChallenges = [...completados];
+  data.playerName = nombre;
+  adminSaveData(nombre, data);
+  return { data, nuevosIds };
+}
+
 function adminSetPoints(nombre, puntos) {
   const data = adminGetData(nombre);
   if (!data) return false;
@@ -1022,6 +1059,7 @@ function adminReset(nombre) {
 
 // ── Panel visual ──────────────────────────────────────
 let adminSelectedPlayer = null;
+let adminUpdateStagePreview = () => {}; // se asigna en initAdmin
 
 function initAdmin() {
   // Botón de entrada en bienvenida
@@ -1076,6 +1114,62 @@ function initAdmin() {
     adminRenderPlayerList();
     if (adminSelectedPlayer) adminRenderPlayerDetail(adminSelectedPlayer);
   });
+
+  // ── Desbloquear reto específico ──────────────────────────────
+  const stageLevelSel     = document.getElementById('admin-stage-level-select');
+  const stageChallengeSel = document.getElementById('admin-stage-challenge-select');
+  const stagePreview      = document.getElementById('admin-stage-preview');
+  const btnUnlockStage    = document.getElementById('btn-admin-unlock-stage');
+
+  adminUpdateStagePreview = function updateStagePreview() {
+    if (!stagePreview || !adminSelectedPlayer) return;
+    const lvlIdx = parseInt(stageLevelSel.value);
+    const chIdx  = parseInt(stageChallengeSel.value);
+    try {
+      const activeLevels = buildActiveLevels(adminSelectedPlayer, 5);
+      const lvl = activeLevels[lvlIdx];
+      if (!lvl) { stagePreview.textContent = ''; return; }
+      const retoNombre = lvl.challenges[chIdx] ? `"${lvl.challenges[chIdx].title}"` : `Reto ${chIdx + 1}`;
+      if (chIdx === 0) {
+        stagePreview.textContent = `Dejará accesible el primer reto del Nivel ${lvl.id} (${lvl.name}).`;
+      } else {
+        stagePreview.textContent = `Marcará ${chIdx} reto${chIdx > 1 ? 's' : ''} como completado${chIdx > 1 ? 's' : ''} → desbloqueará ${retoNombre}.`;
+      }
+    } catch(e) { stagePreview.textContent = ''; }
+  };
+
+  if (stageLevelSel) {
+    stageLevelSel.addEventListener('change', () => {
+      if (stageChallengeSel) {
+        stageChallengeSel.innerHTML = Array.from({length: 5}, (_, i) =>
+          `<option value="${i}">Reto ${i + 1}</option>`
+        ).join('');
+      }
+      adminUpdateStagePreview();
+    });
+  }
+  if (stageChallengeSel) stageChallengeSel.addEventListener('change', () => adminUpdateStagePreview());
+
+  if (btnUnlockStage) {
+    btnUnlockStage.addEventListener('click', () => {
+      if (!adminSelectedPlayer) return;
+      const lvlIdx = parseInt(stageLevelSel.value);
+      const chIdx  = parseInt(stageChallengeSel.value);
+      try {
+        const activeLevels = buildActiveLevels(adminSelectedPlayer, 5);
+        const lvl = activeLevels[lvlIdx];
+        const retoNombre = lvl && lvl.challenges[chIdx] ? lvl.challenges[chIdx].title : `Reto ${chIdx + 1}`;
+        const { nuevosIds } = adminUnlockUpToChallenge(adminSelectedPlayer, lvlIdx, chIdx);
+        const msg = chIdx === 0
+          ? `✅ Nivel ${lvl ? lvl.id : lvlIdx + 1} accesible. El jugador puede empezar desde el Reto 1.`
+          : `✅ ${nuevosIds.length} reto${nuevosIds.length !== 1 ? 's' : ''} marcado${nuevosIds.length !== 1 ? 's' : ''} como completado${nuevosIds.length !== 1 ? 's' : ''}. "${retoNombre}" desbloqueado.`;
+        adminShowFeedback(msg, 'success');
+        adminRenderPlayerDetail(adminSelectedPlayer);
+      } catch(e) {
+        adminShowFeedback('❌ Error: ' + e.message, 'error');
+      }
+    });
+  }
 
   // Botón desbloquear nivel
   const btnUnlock = document.getElementById('btn-admin-unlock');
@@ -1224,6 +1318,9 @@ function adminRenderPlayerDetail(nombre) {
   // Pre-rellenar puntos actuales
   const ptsInput = document.getElementById('admin-points-input');
   if (ptsInput) ptsInput.placeholder = `Actual: ${data.points || 0}`;
+
+  // Actualizar preview de reto específico al cambiar jugador
+  adminUpdateStagePreview();
 }
 
 function adminShowFeedback(msg, tipo) {
